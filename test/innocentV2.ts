@@ -1,11 +1,16 @@
 
+import { ethers } from "hardhat";
 import { groth16 } from "snarkjs";
-import fs from "fs";
 import verificationKey from "../circuits/verification_key.json";
+import { expect } from "chai";
 
 describe("Innocent V2", function () {
   describe("Test proof", function () {
     it("Generate & Verify proof", async function () {
+
+      // DEPLOY smart contracts verifier
+      const facotry = await ethers.getContractFactory("Groth16VerifierV2");
+      const verifier = await facotry.deploy();
 
       // Circuit input
       const input = {
@@ -48,7 +53,13 @@ describe("Innocent V2", function () {
 
       console.log("Verify Proof!")
       const isValid = await groth16.verify(verificationKey, publicSignals, proof)
-      console.log("Proof is", isValid ? "valid" : "invalid")
+      expect(isValid).to.be.true;
+
+      const callData = await groth16.exportSolidityCallData(proof, publicSignals)
+      const args = JSON.parse("[" + callData + "]");
+      const verify = await verifier.verifyProof(args[0], args[1], args[2], publicSignals)
+      expect(verify).to.be.true;
+      
     });
   });
 });
