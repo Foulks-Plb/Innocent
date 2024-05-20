@@ -6,12 +6,21 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 interface IVerifier {
     function verifyProof(
-        bytes memory _proof,
+        uint[2] memory _pA,
+        uint[2][2] memory _pB,
+        uint[2] memory _pC,
         uint256[6] memory _input
     ) external returns (bool);
 }
 
 abstract contract Innocent is MerkleTreeWithHistory, ReentrancyGuard {
+
+    struct IProof {
+        uint[2] _pA;
+        uint[2][2] _pB;
+        uint[2] _pC;
+    }
+
     IVerifier public immutable verifier;
 
     mapping(bytes32 => bool) public nullifierHashes;
@@ -67,7 +76,7 @@ abstract contract Innocent is MerkleTreeWithHistory, ReentrancyGuard {
       - optional fee that goes to the transaction sender (usually a relay)
   */
     function withdraw(
-        bytes calldata _proof,
+        IProof calldata _proof,
         bytes32 _root,
         bytes32 _nullifierHash,
         address payable _recipient,
@@ -83,7 +92,9 @@ abstract contract Innocent is MerkleTreeWithHistory, ReentrancyGuard {
         require(isKnownRoot(_root), "Cannot find your merkle root"); // Make sure to use a recent one
         require(
             verifier.verifyProof(
-                _proof,
+                _proof._pA,
+                _proof._pB,
+                _proof._pC,
                 [
                     uint256(_root),
                     uint256(_nullifierHash),
