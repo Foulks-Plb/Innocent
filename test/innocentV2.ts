@@ -7,6 +7,7 @@ import { randomBytes } from "crypto";
 import * as ffjs from "ffjavascript";
 // @ts-ignore TS7016
 import * as circomlibjs from "circomlibjs";
+import { Contract } from "ethers";
 const MerkleTree = require("fixed-merkle-tree");
 
 const rbigint = (nbytes: number) => ffjs.utils.leBuff2int(randomBytes(nbytes));
@@ -39,26 +40,62 @@ const pedersenHash = async (data: any) => {
   );
 };
 
+let accounts: any;
+let hasher: any;
+let verifier: any;
+let ERC20: any;
+let ERC20Innocent: any;
+
 describe("Innocent V2", function () {
   describe("Test proof", function () {
-    it("Generate & Verify proof", async function () {
-      // DEPLOY smart contracts verifier
-      const facotry = await ethers.getContractFactory("Groth16VerifierV2");
-      const verifier = await facotry.deploy();
+    const denomination = 100;
 
+    this.beforeAll(async function () {
+      accounts = await ethers.getSigners();
+
+      // Deploy contract
+      const HasherF = (await ethers.getContractFactory("Hasher")) as any;
+      hasher = await HasherF.deploy();
+
+      const verifierF = await ethers.getContractFactory("Groth16VerifierV2");
+      verifier = await verifierF.deploy();
+
+      const ERC20F = (await ethers.getContractFactory("ERC20Mock")) as any;
+      ERC20 = await ERC20F.deploy();
+
+      const ERC20InnocentF = (await ethers.getContractFactory(
+        "ERC20Innocent"
+      )) as any;
+      ERC20Innocent = await ERC20InnocentF.deploy(
+        await verifier.getAddress(),
+        await hasher.getAddress(),
+        denomination,
+        20,
+        await ERC20.getAddress()
+      );
+    });
+
+    it("Generate fake ERC20", async function () {
+      await ERC20.approve(await ERC20Innocent.getAddress(), denomination * 10);
+      await ERC20.mint(accounts[0].address, denomination * 10);
+    });
+
+    it("Generate proof & Withdraw", async function () {
       const tree = new MerkleTree(20);
 
       const deposit = await generateDeposit();
 
+      await ERC20Innocent.deposit(toFixedHex(deposit.commitment));
       tree.insert(deposit.commitment);
+
       const { pathElements, pathIndices } = tree.path(0);
 
       // Circuit input
       const input = {
         root: tree.root(),
         nullifierHash: deposit.nullifierHash,
-        relayer: "1007541003127319737265648226243546348715409454172",
-        recipient: "654891529983040929899847612532402103775912841596",
+        relayer: accounts[0].address,
+        recipient: accounts[0].address,
         fee: 10,
         refund: 0,
         nullifier: deposit.nullifier,
@@ -95,6 +132,21 @@ describe("Innocent V2", function () {
         publicSignals
       );
       expect(verify).to.be.true;
+
+      console.log("On Chain call");
+      await ERC20Innocent.withdraw(
+        {
+          _pA: args[0],
+          _pB: args[1],
+          _pC: args[2],
+        },
+        args[3][0],
+        args[3][1],
+        input.relayer,
+        input.recipient,
+        input.fee,
+        input.refund
+      );
     });
   });
 });
