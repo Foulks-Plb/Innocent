@@ -2,14 +2,18 @@ pragma circom 2.0.0;
 
 include "../node_modules/circomlib/circuits/bitify.circom";
 include "../node_modules/circomlib/circuits/pedersen.circom";
+include "../node_modules/circomlib/circuits/sha256/sha256.circom";
 include "merkleTree.circom";
 
 // computes Pedersen(nullifier + secret)
 template CommitmentHasher() {
     signal input nullifier;
     signal input secret;
+    signal input feesGroth; // feesGroth when the deposit was made
+    signal input share; // Share in pool
     signal output commitment;
     signal output nullifierHash;
+    signal output appCommitment; // Hash final (commitment + feesGroth + share)
 
     component commitmentHasher = Pedersen(496);
     component nullifierHasher = Pedersen(248);
@@ -17,14 +21,34 @@ template CommitmentHasher() {
     component secretBits = Num2Bits(248);
     nullifierBits.in <== nullifier;
     secretBits.in <== secret;
+
+
     for (var i = 0; i < 248; i++) {
         nullifierHasher.in[i] <== nullifierBits.out[i];
         commitmentHasher.in[i] <== nullifierBits.out[i];
         commitmentHasher.in[i + 248] <== secretBits.out[i];
     }
 
+    // Combine commitment, feesGroth, and share into a single signal array for SHA-256
+    component commitmentBits = Num2Bits(256);
+    component feesGrothBits = Num2Bits(256);
+    component shareBits = Num2Bits(256);
+
+    commitmentBits.in <== commitmentHasher.out[0];
+    feesGrothBits.in <== feesGroth;
+    shareBits.in <== share;
+
+    component appCommitmentHasher = Sha256(768);
+
+    for (var i = 0; i < 256; i++) {
+        combined[i] <== commitmentBits.out[i]; // Combined from commitment
+        combined[i + 256] <== feesGrothBits.out[i]; // Combined from feesGroth
+        combined[i + 512] <== shareBits.out[i]; // Combined from share
+    }
+
     commitment <== commitmentHasher.out[0];
     nullifierHash <== nullifierHasher.out[0];
+    appCommitment <== combined.out[0];
 }
 
 // Verifies that commitment that corresponds to given secret and nullifier is included in the merkle tree of deposits

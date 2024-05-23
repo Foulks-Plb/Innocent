@@ -3,6 +3,7 @@ pragma solidity ^0.8.13;
 
 import "./MerkleTreeWithHistory.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "hardhat/console.sol";
 
 interface IVerifier {
     function verifyProof(
@@ -14,7 +15,6 @@ interface IVerifier {
 }
 
 abstract contract Innocent is MerkleTreeWithHistory, ReentrancyGuard {
-
     struct IProof {
         uint[2] _pA;
         uint[2][2] _pB;
@@ -55,13 +55,27 @@ abstract contract Innocent is MerkleTreeWithHistory, ReentrancyGuard {
     }
 
     function deposit(bytes32 _commitment) external nonReentrant {
-        require(!commitments[_commitment], "The commitment has been submitted");
+        // console.logBytes32(_commitment);
+        
+        uint256 feesGroth = 100;
+        uint256 share = 20;
+        bytes32 _commitmentApp = bytes32(
+            uint256(sha256(abi.encodePacked(_commitment, feesGroth, share))) %
+                FIELD_SIZE
+        );
 
-        uint32 insertedIndex = _insert(_commitment);
-        commitments[_commitment] = true;
+        console.logBytes32(_commitmentApp);
+
+        require(
+            !commitments[_commitmentApp],
+            "The commitment has been submitted"
+        );
+
+        uint32 insertedIndex = _insert(_commitmentApp);
+        commitments[_commitmentApp] = true;
         _processDeposit();
 
-        emit Deposit(_commitment, insertedIndex, block.timestamp);
+        emit Deposit(_commitmentApp, insertedIndex, block.timestamp);
     }
 
     /** @dev this function is defined in a child contract */

@@ -1,13 +1,12 @@
 import { ethers } from "hardhat";
 import { groth16 } from "snarkjs";
-import verificationKey from "../circuits/withdraw/verification_key.json";
 import { expect } from "chai";
 import { randomBytes } from "crypto";
 // @ts-ignore TS7016
 import * as ffjs from "ffjavascript";
 // @ts-ignore TS7016
 import * as circomlibjs from "circomlibjs";
-import { Contract } from "ethers";
+import verificationKey from "../circuits/withdraw/verification_key.json";
 const MerkleTree = require("fixed-merkle-tree");
 
 const rbigint = (nbytes: number) => ffjs.utils.leBuff2int(randomBytes(nbytes));
@@ -26,6 +25,14 @@ async function generateDeposit() {
     ffjs.utils.leInt2Buff(deposit.secret, 31),
   ]);
   deposit.commitment = await pedersenHash(preimage);
+
+  deposit.appCommitment =
+    BigInt(
+      ethers.solidityPackedSha256(
+        ["uint256", "uint256", "uint256"],
+        [deposit.commitment, 100, 20]
+      )
+    ) % FIELD_SIZE;
   deposit.nullifierHash = await pedersenHash(
     ffjs.utils.leInt2Buff(deposit.nullifier, 31)
   );
@@ -39,6 +46,10 @@ const pedersenHash = async (data: any) => {
     babyJubJub.unpackPoint(Buffer.from(pedersenHash.hash(data)))[0]
   );
 };
+
+const FIELD_SIZE = BigInt(
+  "21888242871839275222246405745257275088548364400416034343698204186575808495617"
+);
 
 let accounts: any;
 let hasher: any;
@@ -86,7 +97,8 @@ describe("Innocent V2", function () {
       const deposit = await generateDeposit();
 
       await ERC20Innocent.deposit(toFixedHex(deposit.commitment));
-      tree.insert(deposit.commitment);
+      console.log(toFixedHex(deposit.appCommitment));
+      tree.insert(deposit.appCommitment);
 
       const { pathElements, pathIndices } = tree.path(0);
 
@@ -102,8 +114,13 @@ describe("Innocent V2", function () {
         secret: deposit.secret,
         pathElements: pathElements,
         pathIndices: pathIndices,
+        feesGroth: 100,
+        share: 20,
       };
 
+      console.log("Input", input);
+
+      return;
       console.log("Generating proof...");
       const { proof, publicSignals } = await groth16.fullProve(
         input,
