@@ -9,8 +9,6 @@ include "merkleTree.circom";
 template CommitmentHasher() {
     signal input nullifier;
     signal input secret;
-    signal input feesGroth; // feesGroth when the deposit was made
-    signal input share; // Share in pool
     signal output commitment;
     signal output nullifierHash;
     signal output appCommitment; // Hash final (commitment + feesGroth + share)
@@ -27,35 +25,42 @@ template CommitmentHasher() {
         nullifierHasher.in[i] <== nullifierBits.out[i];
         commitmentHasher.in[i] <== nullifierBits.out[i];
         commitmentHasher.in[i + 248] <== secretBits.out[i];
-        log(secretBits.out[i]);
-    }
-
-    // Conversion bits
-    component commitmentBits = Num2Bits(256);
-    component feesGrothBits = Num2Bits(256);
-    component shareBits = Num2Bits(256);
-
-    commitmentBits.in <== commitmentHasher.out[0];
-    feesGrothBits.in <== feesGroth;
-    shareBits.in <== share;
-
-    // Combinaison
-    signal combined[768];
-    for (var i = 0; i < 256; i++) {
-        combined[i] <== commitmentBits.out[i];
-        combined[i + 256] <== feesGrothBits.out[i];
-        combined[i + 512] <== shareBits.out[i];
-    }
-
-    // Calcul SHA-256
-    component appCommitmentHasher = Sha256(768);
-    for (var i = 0; i < 768; i++) {
-        appCommitmentHasher.in[i] <== combined[i];
     }
 
     commitment <== commitmentHasher.out[0];
     nullifierHash <== nullifierHasher.out[0];
-    appCommitment <== appCommitmentHasher.out[0];
+}
+
+// SHA-256 hash of the commitment to track fees and pool share
+template Sha256Hasher(length) {
+    var SHA_LENGTH = 256;
+    var inBits = SHA_LENGTH * length;
+
+    signal input in[length];
+    signal output hash;
+
+    // Array to store all bits of inputs for SHA-256 input.
+    var computedBits[inBits];
+
+    // Convert each input into bits and store them in the `bits` array.
+    for (var i = 0; i < length; i++) {
+        var computedBitsInput[SHA_LENGTH] = Num2Bits(SHA_LENGTH)(in[i]);
+        for (var j = 0; j < SHA_LENGTH; j++) {
+            computedBits[(i * SHA_LENGTH) + (SHA_LENGTH - 1) - j] = computedBitsInput[j];
+        }
+    }
+
+    // SHA-256 hash computation.
+    var computedSha256Bits[SHA_LENGTH] = Sha256(inBits)(computedBits);
+
+    // Convert SHA-256 output back to number.
+    var computedBitsToNumInput[SHA_LENGTH];
+    for (var i = 0; i < SHA_LENGTH; i++) {
+        computedBitsToNumInput[i] = computedSha256Bits[(SHA_LENGTH - 1) - i];
+    }
+    var computedSha256Number = Bits2Num(256)(computedBitsToNumInput); 
+
+    hash <== computedSha256Number;
 }
 
 // Verifies that commitment that corresponds to given secret and nullifier is included in the merkle tree of deposits
@@ -76,14 +81,16 @@ template Withdraw(levels) {
     component hasher = CommitmentHasher();
     hasher.nullifier <== nullifier;
     hasher.secret <== secret;
-    hasher.feesGroth <== feesGroth;
-    hasher.share <== share;
     hasher.nullifierHash === nullifierHash;
 
-    log(hasher.appCommitment);
+    signal appCommitment <== Sha256Hasher(3)([
+        hasher.commitment,
+        feesGroth,
+        share
+    ]);
 
     component tree = MerkleTreeChecker(levels);
-    tree.leaf <== hasher.appCommitment; // use app commitment as leaf
+    tree.leaf <== appCommitment; // use app commitment as leaf
     tree.root <== root;
     for (var i = 0; i < levels; i++) {
         tree.pathElements[i] <== pathElements[i];
