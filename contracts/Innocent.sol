@@ -64,8 +64,6 @@ abstract contract Innocent is MerkleTreeWithHistory, ReentrancyGuard {
                 FIELD_SIZE
         );
 
-        console.logBytes32(_commitmentApp);
-
         require(
             !commitments[_commitmentApp],
             "The commitment has been submitted"

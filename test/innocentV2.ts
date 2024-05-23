@@ -6,7 +6,7 @@ import { randomBytes } from "crypto";
 import * as ffjs from "ffjavascript";
 // @ts-ignore TS7016
 import * as circomlibjs from "circomlibjs";
-import verificationKey from "../circuits/withdraw/verification_key.json";
+import verificationKey from "../circuits/withdraw2/verification_key.json";
 const MerkleTree = require("fixed-merkle-tree");
 
 const rbigint = (nbytes: number) => ffjs.utils.leBuff2int(randomBytes(nbytes));
@@ -97,7 +97,6 @@ describe("Innocent V2", function () {
       const deposit = await generateDeposit();
 
       await ERC20Innocent.deposit(toFixedHex(deposit.commitment));
-      console.log(toFixedHex(deposit.appCommitment));
       tree.insert(deposit.appCommitment);
 
       const { pathElements, pathIndices } = tree.path(0);
@@ -118,14 +117,11 @@ describe("Innocent V2", function () {
         share: 20,
       };
 
-      console.log("Input", input);
-
-      return;
       console.log("Generating proof...");
       const { proof, publicSignals } = await groth16.fullProve(
         input,
-        "./circuits/withdraw/withdraw.wasm",
-        "./circuits/withdraw/withdraw_0001.zkey"
+        "./circuits/withdraw2/withdraw.wasm",
+        "./build/withdraw2/withdraw_0001.zkey"
       );
       console.log("Proof generated!");
 
