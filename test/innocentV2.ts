@@ -26,17 +26,26 @@ async function generateDeposit() {
   ]);
   deposit.commitment = await pedersenHash(preimage);
 
-  deposit.appCommitment =
-    BigInt(
-      ethers.solidityPackedSha256(
-        ["uint256", "uint256", "uint256"],
-        [deposit.commitment, 100, 20]
-      )
-    ) % FIELD_SIZE;
   deposit.nullifierHash = await pedersenHash(
     ffjs.utils.leInt2Buff(deposit.nullifier, 31)
   );
+
   return deposit;
+}
+
+async function generateAppCommitment(
+  commitment: any,
+  feesGroth: any,
+  share: any
+) {
+  return (
+    BigInt(
+      ethers.solidityPackedSha256(
+        ["uint256", "uint256", "uint256"],
+        [commitment, feesGroth, share]
+      )
+    ) % FIELD_SIZE
+  );
 }
 
 const pedersenHash = async (data: any) => {
@@ -46,6 +55,8 @@ const pedersenHash = async (data: any) => {
     babyJubJub.unpackPoint(Buffer.from(pedersenHash.hash(data)))[0]
   );
 };
+
+const tree = new MerkleTree(20);
 
 const FIELD_SIZE = BigInt(
   "21888242871839275222246405745257275088548364400416034343698204186575808495617"
@@ -57,8 +68,10 @@ let verifier: any;
 let ERC20: any;
 let ERC20Innocent: any;
 
+let deposit1: any;
+
 describe("Innocent V2", function () {
-  describe("Test proof", function () {
+  describe("Withdraw & Deposit In innocent", function () {
     const denomination = 100;
 
     this.beforeAll(async function () {
@@ -91,47 +104,47 @@ describe("Innocent V2", function () {
       await ERC20.mint(accounts[0].address, denomination * 10);
     });
 
-    it("Generate proof & Withdraw", async function () {
-      const tree = new MerkleTree(20);
+    it("Simualte fees groth", async function () {
+      await ERC20Innocent.addFeesGroth(100);
+    });
 
-      const deposit = await generateDeposit();
+    it("Deposit in pool", async function () {
+      deposit1 = await generateDeposit();
 
-      await ERC20Innocent.deposit(toFixedHex(deposit.commitment));
-      tree.insert(deposit.appCommitment);
+      const amount = 20;
+      await ERC20Innocent.deposit(toFixedHex(deposit1.commitment), amount);
 
+      const appCommitment = await generateAppCommitment(
+        deposit1.commitment,
+        100,
+        amount
+      );
+      tree.insert(appCommitment);
+    });
+
+    it("Withdraw from pool", async function () {
       const { pathElements, pathIndices } = tree.path(0);
-
       // Circuit input
       const input = {
         root: tree.root(),
-        nullifierHash: deposit.nullifierHash,
+        nullifierHash: deposit1.nullifierHash,
         relayer: accounts[0].address,
         recipient: accounts[0].address,
         fee: 10,
         refund: 0,
-        nullifier: deposit.nullifier,
-        secret: deposit.secret,
+        nullifier: deposit1.nullifier,
+        secret: deposit1.secret,
         pathElements: pathElements,
         pathIndices: pathIndices,
         feesGroth: 100,
         share: 20,
       };
 
-      console.log("Generating proof...");
       const { proof, publicSignals } = await groth16.fullProve(
         input,
         "./circuits/withdraw2/withdraw.wasm",
         "./build/withdraw2/withdraw_0001.zkey"
       );
-      console.log("Proof generated!");
-
-      console.log("Verify Proof!");
-      const isValid = await groth16.verify(
-        verificationKey,
-        publicSignals,
-        proof
-      );
-      expect(isValid).to.be.true;
 
       const callData = await groth16.exportSolidityCallData(
         proof,
@@ -146,7 +159,6 @@ describe("Innocent V2", function () {
       );
       expect(verify).to.be.true;
 
-      console.log("On Chain call");
       await ERC20Innocent.withdraw(
         {
           _pA: args[0],

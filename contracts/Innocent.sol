@@ -29,6 +29,8 @@ abstract contract Innocent is MerkleTreeWithHistory, ReentrancyGuard {
 
     mapping(bytes32 => bool) public commitments;
 
+    uint256 public feesGroth;
+
     event Deposit(
         bytes32 indexed commitment,
         uint32 leafIndex,
@@ -54,11 +56,10 @@ abstract contract Innocent is MerkleTreeWithHistory, ReentrancyGuard {
         denomination = _denomination;
     }
 
-    function deposit(bytes32 _commitment) external nonReentrant {
-        // console.logBytes32(_commitment);
-        
-        uint256 feesGroth = 100;
-        uint256 share = 20;
+    function deposit(bytes32 _commitment, uint256 amount) external nonReentrant { 
+        // TODO: Implement the deposit function in pool to have the good share
+        uint256 share = amount; // For now, the share is the same as the amount (mocking the pool)
+
         bytes32 _commitmentApp = bytes32(
             uint256(sha256(abi.encodePacked(_commitment, feesGroth, share))) %
                 FIELD_SIZE
@@ -131,4 +132,8 @@ abstract contract Innocent is MerkleTreeWithHistory, ReentrancyGuard {
         uint256 _fee,
         uint256 _refund
     ) internal virtual {}
+
+    function addFeesGroth(uint256 _feesGroth) external {
+        feesGroth += _feesGroth;
+    }
 }
