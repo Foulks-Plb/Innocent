@@ -11,7 +11,7 @@ template CommitmentHasher() {
     signal input secret;
     signal output commitment;
     signal output nullifierHash;
-    signal output appCommitment; // Hash final (commitment + feesGroth + share)
+    signal output appCommitment; // Hash final (commitment + shares)
 
     component commitmentHasher = Pedersen(496);
     component nullifierHasher = Pedersen(248);
@@ -31,7 +31,7 @@ template CommitmentHasher() {
     nullifierHash <== nullifierHasher.out[0];
 }
 
-// SHA-256 hash of the commitment to track fees and pool share
+// SHA-256 hash of the commitment to track fees and pool shares
 template Sha256Hasher(length) {
     var SHA_LENGTH = 256;
     var inBits = SHA_LENGTH * length;
@@ -73,8 +73,7 @@ template Withdraw(levels) {
     signal input refund;   // not taking part in any computations
     signal input nullifier;
     signal input secret;
-    signal input feesGroth;
-    signal input share;
+    signal input shares;
     signal input pathElements[levels];
     signal input pathIndices[levels];
 
@@ -83,10 +82,9 @@ template Withdraw(levels) {
     hasher.secret <== secret;
     hasher.nullifierHash === nullifierHash;
 
-    signal appCommitment <== Sha256Hasher(3)([
+    signal appCommitment <== Sha256Hasher(2)([
         hasher.commitment,
-        feesGroth,
-        share
+        shares
     ]);
 
     component tree = MerkleTreeChecker(levels);

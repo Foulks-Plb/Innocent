@@ -3,6 +3,7 @@ pragma solidity ^0.8.13;
 
 import "./MerkleTreeWithHistory.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import "hardhat/console.sol";
 
 interface IVerifier {
@@ -14,7 +15,7 @@ interface IVerifier {
     ) external returns (bool);
 }
 
-abstract contract Innocent is MerkleTreeWithHistory, ReentrancyGuard {
+contract Innocent is MerkleTreeWithHistory, ReentrancyGuard, ERC4626 {
     struct IProof {
         uint[2] _pA;
         uint[2][2] _pB;
@@ -28,8 +29,6 @@ abstract contract Innocent is MerkleTreeWithHistory, ReentrancyGuard {
     uint256 public denomination;
 
     mapping(bytes32 => bool) public commitments;
-
-    uint256 public feesGroth;
 
     event Deposit(
         bytes32 indexed commitment,
@@ -49,20 +48,26 @@ abstract contract Innocent is MerkleTreeWithHistory, ReentrancyGuard {
         IVerifier _verifier,
         IHasher _hasher,
         uint256 _denomination,
-        uint32 _merkleTreeHeight
-    ) MerkleTreeWithHistory(_merkleTreeHeight, _hasher) {
+        uint32 _merkleTreeHeight,
+        IERC20 _token
+    )
+        MerkleTreeWithHistory(_merkleTreeHeight, _hasher)
+        ERC4626(_token)
+        ERC20("Innocent", "INN")
+    {
         require(_denomination > 0, "denomination should be greater than 0");
         verifier = _verifier;
         denomination = _denomination;
     }
 
-    function deposit(bytes32 _commitment, uint256 amount) external nonReentrant { 
-        // TODO: Implement the deposit function in pool to have the good share
-        uint256 share = amount; // For now, the share is the same as the amount (mocking the pool)
+    function depositAsset(
+        bytes32 _commitment,
+        uint256 asset
+    ) external nonReentrant {
+        uint256 shares = deposit(asset, address(this));
 
         bytes32 _commitmentApp = bytes32(
-            uint256(sha256(abi.encodePacked(_commitment, feesGroth, share))) %
-                FIELD_SIZE
+            uint256(sha256(abi.encodePacked(_commitment, shares))) % FIELD_SIZE
         );
 
         require(
@@ -72,13 +77,9 @@ abstract contract Innocent is MerkleTreeWithHistory, ReentrancyGuard {
 
         uint32 insertedIndex = _insert(_commitmentApp);
         commitments[_commitmentApp] = true;
-        _processDeposit();
 
         emit Deposit(_commitmentApp, insertedIndex, block.timestamp);
     }
-
-    /** @dev this function is defined in a child contract */
-    function _processDeposit() internal virtual {}
 
     /**
     @dev Withdraw a deposit from the contract. `proof` is a zkSNARK proof data, and input is an array of circuit public inputs
@@ -88,7 +89,7 @@ abstract contract Innocent is MerkleTreeWithHistory, ReentrancyGuard {
       - the recipient of funds
       - optional fee that goes to the transaction sender (usually a relay)
   */
-    function withdraw(
+    function withdrawAsset(
         IProof calldata _proof,
         bytes32 _root,
         bytes32 _nullifierHash,
@@ -120,20 +121,24 @@ abstract contract Innocent is MerkleTreeWithHistory, ReentrancyGuard {
             "Invalid withdraw proof"
         );
 
+        // TODO
+        redeem(20, msg.sender, address(this));
         nullifierHashes[_nullifierHash] = true;
-        _processWithdraw(_recipient, _relayer, _fee, _refund);
+
         emit Withdrawal(_recipient, _nullifierHash, _fee);
     }
 
-    /** @dev this function is defined in a child contract */
-    function _processWithdraw(
-        address payable _recipient,
-        address payable _relayer,
-        uint256 _fee,
-        uint256 _refund
-    ) internal virtual {}
+    /** @dev See {IERC4626-redeem}. */
+    // Overide ERC4626 redeem function because owner is not the msg.sender and we cant need to check allowance
+    function redeem(uint256 shares, address receiver, address owner) public virtual override returns (uint256) {
+        uint256 maxShares = maxRedeem(owner);
+        if (shares > maxShares) {
+            revert ERC4626ExceededMaxRedeem(owner, shares, maxShares);
+        }
 
-    function addFeesGroth(uint256 _feesGroth) external {
-        feesGroth += _feesGroth;
+        uint256 assets = previewRedeem(shares);
+        _withdraw(owner, receiver, owner, assets, shares);
+
+        return assets;
     }
 }

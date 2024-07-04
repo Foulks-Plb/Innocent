@@ -7,6 +7,7 @@ import * as ffjs from "ffjavascript";
 // @ts-ignore TS7016
 import * as circomlibjs from "circomlibjs";
 import verificationKey from "../circuits/withdraw2/verification_key.json";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 const MerkleTree = require("fixed-merkle-tree");
 
 const rbigint = (nbytes: number) => ffjs.utils.leBuff2int(randomBytes(nbytes));
@@ -33,17 +34,10 @@ async function generateDeposit() {
   return deposit;
 }
 
-async function generateAppCommitment(
-  commitment: any,
-  feesGroth: any,
-  share: any
-) {
+async function generateAppCommitment(commitment: number, shares: number) {
   return (
     BigInt(
-      ethers.solidityPackedSha256(
-        ["uint256", "uint256", "uint256"],
-        [commitment, feesGroth, share]
-      )
+      ethers.solidityPackedSha256(["uint256", "uint256"], [commitment, shares])
     ) % FIELD_SIZE
   );
 }
@@ -62,11 +56,11 @@ const FIELD_SIZE = BigInt(
   "21888242871839275222246405745257275088548364400416034343698204186575808495617"
 );
 
-let accounts: any;
+let accounts: HardhatEthersSigner[];
 let hasher: any;
 let verifier: any;
 let ERC20: any;
-let ERC20Innocent: any;
+let innocent: any;
 
 let deposit1: any;
 
@@ -87,10 +81,8 @@ describe("Innocent V2", function () {
       const ERC20F = (await ethers.getContractFactory("ERC20Mock")) as any;
       ERC20 = await ERC20F.deploy();
 
-      const ERC20InnocentF = (await ethers.getContractFactory(
-        "ERC20Innocent"
-      )) as any;
-      ERC20Innocent = await ERC20InnocentF.deploy(
+      const innocentF = (await ethers.getContractFactory("Innocent")) as any;
+      innocent = await innocentF.deploy(
         await verifier.getAddress(),
         await hasher.getAddress(),
         denomination,
@@ -100,26 +92,33 @@ describe("Innocent V2", function () {
     });
 
     it("Generate fake ERC20", async function () {
-      await ERC20.approve(await ERC20Innocent.getAddress(), denomination * 10);
+      await ERC20.approve(await innocent.getAddress(), denomination * 10);
       await ERC20.mint(accounts[0].address, denomination * 10);
-    });
-
-    it("Simualte fees groth", async function () {
-      await ERC20Innocent.addFeesGroth(100);
     });
 
     it("Deposit in pool", async function () {
       deposit1 = await generateDeposit();
 
       const amount = 20;
-      await ERC20Innocent.deposit(toFixedHex(deposit1.commitment), amount);
-
+      await innocent.depositAsset(toFixedHex(deposit1.commitment), amount);
       const appCommitment = await generateAppCommitment(
         deposit1.commitment,
-        100,
         amount
       );
+      console.log(appCommitment);
       tree.insert(appCommitment);
+    });
+
+    it("Verify assets & shares", async function () {
+      expect(await innocent.balanceOf(await innocent.getAddress())).to.be.equal(
+        20
+      );
+      expect(await ERC20.balanceOf(await innocent.getAddress())).to.be.equal(
+        20
+      );
+      expect(await ERC20.balanceOf(await accounts[0].getAddress())).to.be.equal(
+        denomination * 10 - 20
+      );
     });
 
     it("Withdraw from pool", async function () {
@@ -136,8 +135,7 @@ describe("Innocent V2", function () {
         secret: deposit1.secret,
         pathElements: pathElements,
         pathIndices: pathIndices,
-        feesGroth: 100,
-        share: 20,
+        shares: 20,
       };
 
       const { proof, publicSignals } = await groth16.fullProve(
@@ -159,7 +157,7 @@ describe("Innocent V2", function () {
       );
       expect(verify).to.be.true;
 
-      await ERC20Innocent.withdraw(
+      await innocent.withdrawAsset(
         {
           _pA: args[0],
           _pB: args[1],
@@ -171,6 +169,16 @@ describe("Innocent V2", function () {
         input.recipient,
         input.fee,
         input.refund
+      );
+
+      expect(await innocent.balanceOf(await innocent.getAddress())).to.be.equal(
+        0
+      );
+      expect(await ERC20.balanceOf(await innocent.getAddress())).to.be.equal(
+        0
+      );
+      expect(await ERC20.balanceOf(await accounts[0].getAddress())).to.be.equal(
+        denomination * 10
       );
     });
   });
