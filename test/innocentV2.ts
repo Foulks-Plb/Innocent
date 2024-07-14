@@ -63,6 +63,7 @@ let ERC20: any;
 let innocent: any;
 
 let deposit1: any;
+let deposit2: any;
 
 describe("Innocent V2", function () {
   describe("Withdraw & Deposit In innocent", function () {
@@ -123,6 +124,13 @@ describe("Innocent V2", function () {
 
     it("Withdraw from pool", async function () {
       const { pathElements, pathIndices } = tree.path(0);
+
+      deposit2 = await generateDeposit();
+      const appCommitmentNew = await generateAppCommitment(
+        deposit2.commitment,
+        5
+      );
+
       // Circuit input
       const input = {
         root: tree.root(),
@@ -133,21 +141,24 @@ describe("Innocent V2", function () {
         refund: 0,
         nullifier: deposit1.nullifier,
         secret: deposit1.secret,
-        pathElements: pathElements,
-        pathIndices: pathIndices,
         shares: 20,
+        commitmentNew: deposit2.commitment,
+        sharesWithdraw: 15,
+        appCommitmentNew: appCommitmentNew,
+        pathElements: pathElements,
+        pathIndices: pathIndices
       };
 
       const { proof, publicSignals } = await groth16.fullProve(
         input,
-        "./circuits/withdraw2/withdraw.wasm",
+        "./circuits/withdraw2/withdraw_js/withdraw.wasm",
         "./build/withdraw2/withdraw_0001.zkey"
       );
-
       const callData = await groth16.exportSolidityCallData(
         proof,
         publicSignals
       );
+
       const args = JSON.parse("[" + callData + "]");
       const verify = await verifier.verifyProof(
         args[0],
@@ -168,17 +179,17 @@ describe("Innocent V2", function () {
         input.relayer,
         input.recipient,
         input.fee,
-        input.refund
+        input.refund,
+        15,
+        appCommitmentNew,
       );
-
+      console.log(await ERC20.balanceOf(await accounts[0].getAddress()))
       expect(await innocent.balanceOf(await innocent.getAddress())).to.be.equal(
-        0
+        5
       );
-      expect(await ERC20.balanceOf(await innocent.getAddress())).to.be.equal(
-        0
-      );
+      expect(await ERC20.balanceOf(await innocent.getAddress())).to.be.equal(5);
       expect(await ERC20.balanceOf(await accounts[0].getAddress())).to.be.equal(
-        denomination * 10
+        995
       );
     });
   });

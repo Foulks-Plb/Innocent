@@ -11,7 +11,7 @@ interface IVerifier {
         uint[2] memory _pA,
         uint[2][2] memory _pB,
         uint[2] memory _pC,
-        uint256[6] memory _input
+        uint256[8] memory _input
     ) external returns (bool);
 }
 
@@ -96,7 +96,9 @@ contract Innocent is MerkleTreeWithHistory, ReentrancyGuard, ERC4626 {
         address payable _recipient,
         address payable _relayer,
         uint256 _fee,
-        uint256 _refund
+        uint256 _refund,
+        uint256 witdhrawShares,
+        uint256 _commitmentAppNew
     ) external payable nonReentrant {
         require(_fee <= denomination, "Fee exceeds transfer value");
         require(
@@ -115,14 +117,16 @@ contract Innocent is MerkleTreeWithHistory, ReentrancyGuard, ERC4626 {
                     uint256(uint160(address(_recipient))),
                     uint256(uint160(address(_relayer))),
                     _fee,
-                    _refund
+                    _refund,
+                    witdhrawShares,
+                    uint256(_commitmentAppNew)
                 ]
             ),
             "Invalid withdraw proof"
         );
 
         // TODO
-        redeem(20, msg.sender, address(this));
+        redeem(witdhrawShares, msg.sender, address(this));
         nullifierHashes[_nullifierHash] = true;
 
         emit Withdrawal(_recipient, _nullifierHash, _fee);

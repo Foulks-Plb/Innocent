@@ -76,7 +76,7 @@ template Withdraw(levels) {
     signal input shares;
     signal input commitmentNew; // new commitment
     signal input sharesWithdraw; // shares to withdraw
-    signal input appCommitmentNew; // new commitment hash with shares included
+    signal input appCommitmentNew; // new commitment hash with shares added
     signal input pathElements[levels];
     signal input pathIndices[levels];
 
@@ -121,4 +121,4 @@ template Withdraw(levels) {
     refundSquare <== refund * refund;
 }
 
-component main {public [root,nullifierHash,recipient,relayer,fee,refund,sharesWithdraw,commitmentNew,appCommitmentNew]} = Withdraw(20);
+component main {public [root,nullifierHash,recipient,relayer,fee,refund,sharesWithdraw,appCommitmentNew]} = Withdraw(20);
