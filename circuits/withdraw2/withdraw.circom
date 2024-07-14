@@ -74,6 +74,9 @@ template Withdraw(levels) {
     signal input nullifier;
     signal input secret;
     signal input shares;
+    signal input commitmentNew; // new commitment
+    signal input sharesWithdraw; // shares to withdraw
+    signal input appCommitmentNew; // new commitment hash with shares included
     signal input pathElements[levels];
     signal input pathIndices[levels];
 
@@ -82,18 +85,28 @@ template Withdraw(levels) {
     hasher.secret <== secret;
     hasher.nullifierHash === nullifierHash;
 
-    signal appCommitment <== Sha256Hasher(2)([
+    signal appCommitmentOld <== Sha256Hasher(2)([
         hasher.commitment,
         shares
     ]);
 
     component tree = MerkleTreeChecker(levels);
-    tree.leaf <== appCommitment; // use app commitment as leaf
+    tree.leaf <== appCommitmentOld; // use app commitment as leaf
     tree.root <== root;
     for (var i = 0; i < levels; i++) {
         tree.pathElements[i] <== pathElements[i];
         tree.pathIndices[i] <== pathIndices[i];
     }
+
+    signal sharesRemaining <== shares - sharesWithdraw;
+    assert(sharesRemaining>=0);
+
+    signal _appCommitmentNew <== Sha256Hasher(2)([
+        commitmentNew,
+        sharesRemaining
+    ]);
+
+    _appCommitmentNew === appCommitmentNew;
 
     // Add hidden signals to make sure that tampering with recipient or fee will invalidate the snark proof
     // Most likely it is not required, but it's better to stay on the safe side and it only takes 2 constraints
@@ -108,4 +121,4 @@ template Withdraw(levels) {
     refundSquare <== refund * refund;
 }
 
-component main {public [root,nullifierHash,recipient,relayer,fee,refund]} = Withdraw(20);
+component main {public [root,nullifierHash,recipient,relayer,fee,refund,sharesWithdraw,commitmentNew,appCommitmentNew]} = Withdraw(20);
